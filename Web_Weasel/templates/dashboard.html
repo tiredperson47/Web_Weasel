@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Web Weasel — Gobuster Mapper</title>
+
+  <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link href="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.css" rel="stylesheet" />
+  
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; background:#0f1724; color:#e6eef8 }
+    header { display:flex; gap:1rem; align-items:center; padding:1rem; background:#071022 } 
+    header a { color:#9bd0ff; text-decoration:none; font-weight:600 }
+    .container { padding:1rem }
+    .hidden { display:none }
+    #network { width:100%; height:600px; background:#071022; border-radius:8px; box-shadow:0 6px 18px rgba(2,6,23,0.6); }
+    .panel { background:#071022; padding:1rem; border-radius:8px; margin-bottom:1rem }
+    label { display:block; margin-bottom:.25rem; color:#cfe8ff }
+    input, select, button, textarea { padding:.5rem; border-radius:6px; border:1px solid #15324a; background:#071722; color:#e6eef8 }
+    textarea { width:100%; height:110px; resize:none; font-family:monospace; }
+    .row { display:flex; gap:.5rem; align-items:center }
+    .small { font-size:.9rem; color:#9bbbd9 }
+    /* Popup button styles and visual "clicking" effect */
+    #add-node-popup button {
+      transition: all 160ms ease;
+    }
+    #popup-submit {
+      background:#9bd0ff;
+      color:#071022;
+      border:none;
+      padding:.5rem .75rem;
+      border-radius:6px;
+      cursor:pointer;
+    }
+    /* Visually show that the Add button is in progress */
+    #popup-submit.adding {
+      transform: translateY(1px) scale(0.995);
+      background: linear-gradient(90deg,#7fc3ff,#bde8ff);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25) inset;
+      opacity: 0.95;
+    }
+    /* Short success pulse */
+    #popup-submit.success {
+      background: linear-gradient(90deg,#8ef08a,#5de86a);
+      color: #042014;
+      transform: translateY(0) scale(1.02);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h3 style="margin:0">Web Weasel — Graph Dashboard</h3>
+  <nav style="margin-left:1rem">
+    <a href="#" id="nav-dashboard">Dashboard</a> |
+    <a href="#" id="nav-upload">Upload</a>
+  </nav>
+</header>
+
+<main class="container">
+
+<!-- ========================= DASHBOARD ========================= -->
+<section id="page-dashboard">
+
+  <!-- BLOODHOUND-LIKE QUERY BAR -->
+  <div class="panel">
+    <label><strong>Cypher Query</strong></label>
+
+    <!-- Predefined Queries -->
+  <select id="preset-queries">
+    <option value="">Select a predefined query...</option>
+    <option value="MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 200">Full Graph (Limit 200)</option>
+    <option value="MATCH (n)-[r]->(m) WHERE m.domain = $domain RETURN n,r,m">All Paths Under Domain</option>
+    <option value="MATCH (n)-[r]->(m) WHERE m.subdomain = $domain RETURN n,r,m">All Paths Under Subdomain</option>
+    <option value="MATCH (p:Path {domain: $domain, path: $path})-[r]->(c) RETURN p,r,c">Filter by Path</option>
+  </select>
+
+    <!-- Query Editor -->
+    <textarea id="cypher-box" placeholder="Write or modify your Cypher query here..."></textarea>
+
+    <div class="row" style="margin-top:.5rem">
+      <button id="btn-run-query">Run Query</button>
+      <button id="btn-fit">Fit Graph</button>
+    </div>
+  </div>
+
+  <!-- PARAMETER FILTERS (Bloodhound style) -->
+  <div class="panel">
+    <div class="row">
+      <div style="flex:1">
+        <label>Filter by Domain</label>
+        <input id="param-domain" placeholder="example.com" />
+      </div>
+
+      <div style="flex:1">
+        <label>Filter by Subdomain</label>
+        <input id="param-subdomain" placeholder="www.example.com" />
+      </div>
+
+      <div style="flex:1">
+        <label>Filter by Path</label>
+        <input id="param-path" placeholder="/admin/login" />
+      </div>
+    </div>
+  </div>
+
+  <!-- GRAPH -->
+  <div id="network"></div>
+
+  <!-- NODE DETAILS -->
+  <div class="panel">
+    <strong>Selection</strong>
+    <div id="selection-info" class="small">Click a node to see details</div>
+  </div>
+
+</section>
+
+
+<!-- ========================= UPLOAD ========================= -->
+<section id="page-upload" class="hidden">
+  <div class="panel">
+    <form id="upload-form">
+      <label for="url">Scanned URL</label>
+      <input id="url" name="url" placeholder="example.com" required />
+
+      <label for="files">Gobuster output files</label>
+      <input id="files" name="file" type="file" multiple required />
+
+      <div class="row">
+        <button type="submit">Upload & Parse</button>
+        <button type="button" id="btn-upload-reset">Reset</button>
+      </div>
+
+      <div class="upload-feedback" id="upload-feedback" style="white-space:pre-wrap;font-family:monospace;color:#bfefff"></div>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<!-- ===================== ADD NODE POPUP ===================== -->
+<div id="add-node-popup" class="hidden" style="
+    position: fixed;
+    top:50%; left:50%;
+    transform: translate(-50%, -50%);
+    background: #071022;
+    border: 1px solid #1f3b5a;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    z-index: 10000;
+    box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+    width: 300px;
+">
+  <h3 style="margin-top:0; color:#9bd0ff; font-size:1.1rem">Add Node</h3>
+
+  <label style="margin-top:.5rem">Parent Type</label>
+  <div class="row" style="margin-bottom:.5rem">
+    <button class="parent-type-btn" data-type="domain">Domain</button>
+    <button class="parent-type-btn" data-type="subdomain">Subdomain</button>
+    <button class="parent-type-btn" data-type="path">Path</button>
+  </div>
+
+  <label>Path Name</label>
+  <input id="popup-path" placeholder="/example/path" />
+
+  <label>Domain</label>
+  <input id="popup-domain" placeholder="example.com" />
+
+  <div class="row" style="justify-content:flex-end; margin-top:0.75rem;">
+    <button id="popup-cancel" style="background:#112034; border:1px solid #15324a;">Cancel</button>
+    <button id="popup-submit" style="background:#9bd0ff; color:#071022; border:none;">Add</button>
+  </div>
+</div>
+
+<script>
+// ===== Popup Logic =====
+const popup = document.getElementById("add-node-popup");
+let selectedParentType = null;
+
+// Style buttons and handle selection
+document.querySelectorAll(".parent-type-btn").forEach(btn => {
+  btn.style.flex = "1";
+  btn.style.padding = ".5rem";
+  btn.style.borderRadius = "6px";
+  btn.style.border = "1px solid #15324a";
+  btn.style.background = "#071722";
+  btn.style.color = "#e6eef8";
+  btn.style.cursor = "pointer";
+
+  btn.onmouseenter = () => btn.style.background = "#112034";
+  btn.onmouseleave = () => {
+    if(selectedParentType !== btn.dataset.type) btn.style.background = "#071722";
+  };
+
+  btn.onclick = () => {
+    selectedParentType = btn.dataset.type;
+    document.querySelectorAll(".parent-type-btn").forEach(b => b.style.background="#071722");
+    btn.style.background = "#1f3b5a";
+  };
+});
+
+// Open the popup (example trigger)
+function openAddNodePopup() {
+  selectedParentType = null;
+  document.querySelectorAll(".parent-type-btn").forEach(b => b.style.background="#071722");
+  document.getElementById("popup-path").value = "";
+  document.getElementById("popup-domain").value = "";
+  popup.classList.remove("hidden");
+  popup.onclick = (e) => e.stopPropagation();
+}
+
+// Optional: close popup by clicking outside
+window.addEventListener("click", (e) => {
+  if (e.button === 0) { // left click
+    if (!popup.contains(e.target) && !popup.classList.contains("hidden")) {
+      popup.classList.add("hidden");
+    }
+  }
+});
+
+/* ===================== NAV SPA ===================== */
+const pageDashboard = document.getElementById("page-dashboard");
+const pageUpload = document.getElementById("page-upload");
+
+document.getElementById("nav-dashboard").onclick = (e)=>{
+  e.preventDefault(); pageDashboard.classList.remove("hidden"); pageUpload.classList.add("hidden");
+};
+document.getElementById("nav-upload").onclick = (e)=>{
+  e.preventDefault(); pageUpload.classList.remove("hidden"); pageDashboard.classList.add("hidden");
+};
+
+
+/* ===================== VIS GRAPH ===================== */
+const container = document.getElementById("network");
+let network = null;
+const nodes = new vis.DataSet([]);
+const edges = new vis.DataSet([]);
+
+const options = {
+  nodes: { shape:"dot", size:18, font:{color:"#e6eef8"} },
+  edges: { arrows:{to:{enabled:true}}, font:{color:"#7aa7d7", strokeWidth:0, size:14} },
+  physics: { stabilization: true },
+  interaction: {
+    multiselect: true,
+    selectable: true,
+  }
+};
+
+function renderGraph(data){
+  nodes.clear(); edges.clear();
+  nodes.add(data.nodes); edges.add(data.edges);
+
+  if(!network){
+    network = new vis.Network(container, { nodes, edges }, options);
+
+    network.on("click", (params)=>{
+      if(params.nodes.length){
+        const node = nodes.get(params.nodes[0]);
+        document.getElementById("selection-info").textContent = JSON.stringify(node, null, 2);
+      }
+    });
+
+    /* ---------------------- RIGHT CLICK MENU ---------------------- */
+    network.on("oncontext", (params)=>{
+      params.event.preventDefault();
+
+      const pointer = params.pointer.DOM;
+      const nodeId = params.nodes[0] || null;
+      const edgeId = network.getEdgeAt(pointer);
+
+      showContextMenu(params.event.pageX, params.event.pageY, nodeId, edgeId);
+    });
+
+  } else {
+    network.setData({ nodes, edges });
+  }
+}
+
+
+/* ===================== CONTEXT MENU ===================== */
+const menu = document.createElement("div");
+menu.style.position = "absolute";
+menu.style.background = "#0b1624";
+menu.style.border = "1px solid #1f3b5a";
+menu.style.padding = "8px";
+menu.style.borderRadius = "6px";
+menu.style.display = "none";
+menu.style.zIndex = "9999";
+document.body.appendChild(menu);
+
+function showContextMenu(x, y, nodeId, edgeId){
+  menu.innerHTML = "";
+
+  if(nodeId){
+    addMenuItem("Delete Node",
+      ()=> {
+        executeCypherQuery(`MATCH (n) WHERE elementId(n) = "${nodeId}" DETACH DELETE n`)
+        nodes.remove(nodeId);;
+    });
+
+    addMenuItem("Delete Children",
+      ()=> {
+        executeCypherQuery(`
+        MATCH (n) WHERE elementId(n) = "${nodeId}"
+        MATCH (n)-[*1..]->(c)
+        DETACH DELETE c
+      `)
+
+        const childIds = getDescendants(nodeId).filter(id => id !== nodeId);
+        nodes.remove(childIds);
+        // Remove edges connected to deleted nodes
+        edges.forEach(edge => {
+          if (childIds.includes(edge.from) || childIds.includes(edge.to)) {
+            edges.remove(edge.id);
+          }
+        });
+    });
+
+    addMenuItem("Delete Node + Children",
+      ()=> {
+        executeCypherQuery(`
+        MATCH (n) WHERE elementId(n) = "${nodeId}"
+        MATCH (n)-[*0..]->(c)
+        DETACH DELETE c
+      `)
+        const allIds = getDescendants(nodeId);
+
+        // 3. Remove from the visual graph
+        nodes.remove(allIds);
+        
+        // Remove edges too
+        edges.forEach(edge => {
+          if (allIds.includes(edge.from) || allIds.includes(edge.to)) {
+            edges.remove(edge.id);
+          }
+        });
+    });
+
+    addMenuItem("Add Child Node", () => {
+      openAddNodePopup();
+
+      const submitBtn = document.getElementById("popup-submit");
+      const cancelBtn = document.getElementById("popup-cancel");
+
+      // Remove previous click listeners to prevent stacking
+      const newSubmit = submitBtn.cloneNode(true);
+      const newCancel = cancelBtn.cloneNode(true);
+      submitBtn.parentNode.replaceChild(newSubmit, submitBtn);
+      cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+
+      newCancel.onclick = async () => {
+        popup.classList.add("hidden");
+      }
+
+      newSubmit.onclick = async () => {
+        const path = document.getElementById("popup-path").value.trim();
+        const domain = document.getElementById("popup-domain").value.trim();
+
+        if (!selectedParentType) return alert("Select a parent type!");
+        if (!domain) return alert("Enter a domain!");
+        if (!path) return alert("Enter a path!");
+        popup.classList.add("hidden");
+        const type = selectedParentType.charAt(0).toUpperCase() + selectedParentType.slice(1);
+
+        let cypher = "";
+        if (type === "Domain" || type === "Path") {
+          cypher = `
+            MATCH (n) WHERE elementId(n) = "${nodeId}"
+            CREATE (p:${type} {domain: "${domain}", path: "${path}"})
+            CREATE (n)-[:Subdirectory]->(p)
+            RETURN elementId(p) AS id, p
+          `;
+        } else if (type === "Subdomain") {
+          cypher = `
+            MATCH (n) WHERE elementId(n) = "${nodeId}"
+            MERGE (d:Domain {name: "${domain}"})
+            MERGE (d)-[:Subdomain]->(n)
+            MERGE (p:Path {domain: "${domain}", path: "${path}"})
+            MERGE (n)-[:Subdirectory]->(p)
+            RETURN elementId(p) AS id, p
+          `;
+        }
+
+        const records = await executeCypherQuery(cypher, { domain, path });
+
+        const newNodeId = records[0]["id"];
+        nodes.add({ id: newNodeId, label: path || domain, group: type, domain });
+        edges.add({ from: nodeId, to: newNodeId, arrows: "Subdirectory" });
+      };
+    });
+  }
+
+
+  // if nothing was clicked, don't show menu
+  if(menu.innerHTML.trim() === "") return;
+
+  menu.style.left = x + "px";
+  menu.style.top = y + "px";
+  menu.style.display = "block";
+}
+
+// Menu Helpers
+function addMenuItem(text, handler){
+  const div = document.createElement("div");
+  div.textContent = text;
+  div.style.padding = "6px";
+  div.style.cursor = "pointer";
+  div.style.color = "#cfe8ff";
+  div.onmouseenter = ()=> div.style.background = "#112034";
+  div.onmouseleave = ()=> div.style.background = "transparent";
+  // STOP PROPAGATION so the same click that opens the popup doesn't bubble to the
+  // window click listener and immediately close the popup.
+  div.onclick = (e) => { e.stopPropagation(); menu.style.display = "none"; handler(); };
+  menu.appendChild(div);
+}
+
+document.addEventListener("click", ()=> menu.style.display = "none");
+
+async function executeCypherQuery(cypher) {
+   const res = await fetch("/api/execute-cypher", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: cypher, params: {} })
+  });
+  return await res.json();
+}
+
+function getDescendants(rootId) {
+  const toVisit = [rootId];
+  const visited = new Set();
+
+  while (toVisit.length > 0) {
+    const current = toVisit.pop();
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    // Find children (edges where current is the parent)
+    edges.forEach(edge => {
+      if (edge.from === current) {
+        toVisit.push(edge.to);
+      }
+    });
+  }
+
+  return Array.from(visited);
+}
+
+
+/* ===================== RUN CYPHER QUERY ===================== */
+document.getElementById("btn-run-query").onclick = async ()=>{
+  let query = document.getElementById("cypher-box").value.trim();
+  let domain = document.getElementById("param-domain").value.trim();
+  let subdomain = document.getElementById("param-subdomain").value.trim();
+  let path = document.getElementById("param-path").value.trim();
+
+  const payload = { query, params:{} };
+  if(subdomain) payload.params.subdomain = subdomain;
+  if(path) payload.params.path = path;
+  if(domain) payload.params.domain = domain;
+
+  const res = await fetch("/api/graph", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  renderGraph(data);
+};
+
+
+/* ===================== PREDEFINED QUERIES ===================== */
+document.getElementById("preset-queries").onchange = ()=>{
+  document.getElementById("cypher-box").value =
+    document.getElementById("preset-queries").value;
+};
+
+/* Fit graph */
+document.getElementById("btn-fit").onclick = ()=> network?.fit();
+
+
+/* ===================== UPLOAD FORM ===================== */
+document.getElementById("upload-form").onsubmit = async (e)=>{
+  e.preventDefault();
+  const fd = new FormData();
+  const files = document.getElementById("files").files;
+  const url = document.getElementById("url").value;
+
+  for (const f of files) fd.append("file", f);
+  fd.append("url", url);
+
+  const res = await fetch("/upload", { method:"POST", body:fd });
+  const data = await res.json();
+  document.getElementById("upload-feedback").textContent = JSON.stringify(data, null, 2);
+};
+</script>
+
+
+</body>
+</html>

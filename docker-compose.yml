@@ -1,0 +1,47 @@
+services:
+  neo4j:
+    container_name: neo4j
+    image: neo4j:latest
+    volumes:
+      - ./neo4j/logs:/logs
+      - ./neo4j/config:/config
+      - ./neo4j/data:/data
+      - ./neo4j/plugins:/plugins
+    environment:
+      - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth_file
+    ports:
+      - "127.0.0.1:7474:7474" # Change to local docker network only later
+      - "127.0.0.1:7687:7687" # Change to local docker network only later
+    restart: always
+    secrets:
+      - neo4j_auth_file
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # networks:
+    #   - weasel
+
+  # web_weasel:
+  #   container_name: web_weasel
+  #   build: ./Web_Weasel
+  #   ports:
+  #     - "8000"
+  #   volumes:
+  #     - ./neo4j_auth.txt:/app/neo4j_auth.txt:ro
+  #   restart: always
+    # networks:
+    #   - weasel
+      # depends_on:
+      # neo4j:
+      #   condition: service_healthy
+
+secrets:
+  neo4j_auth_file:
+    file: ./neo4j_auth.txt
+
+# networks:
+#   weasel:
+#     driver: bridge
