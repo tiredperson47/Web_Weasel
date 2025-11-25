@@ -9,16 +9,19 @@
   <link href="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.css" rel="stylesheet" />
   
   <style>
-    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; background:#0f1724; color:#e6eef8 }
-    header { display:flex; gap:1rem; align-items:center; padding:1rem; background:#071022 } 
+  body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; background:#0f1724; color:#e6eef8; font-size:16px }
+  header { display:flex; gap:1rem; align-items:center; padding:1rem; background:#071022 } 
     header a { color:#9bd0ff; text-decoration:none; font-weight:600 }
-    .container { padding:1rem }
+  .container { padding:1rem }
     .hidden { display:none }
     #network { width:100%; height:600px; background:#071022; border-radius:8px; box-shadow:0 6px 18px rgba(2,6,23,0.6); }
+    body.light #network { background:#ffffff; box-shadow:0 2px 8px rgba(0,0,0,0.1) }
     .panel { background:#071022; padding:1rem; border-radius:8px; margin-bottom:1rem }
-    label { display:block; margin-bottom:.25rem; color:#cfe8ff }
-    input, select, button, textarea { padding:.5rem; border-radius:6px; border:1px solid #15324a; background:#071722; color:#e6eef8 }
+    label { display:block; margin-bottom:.25rem; color:#cfe8ff; font-size:15px }
+  input, select, button, textarea { padding:.75rem; border-radius:8px; border:1px solid #15324a; background:#071722; color:#e6eef8; font-size:15px }
     textarea { width:100%; height:110px; resize:none; font-family:monospace; }
+    #cypher-box { width:100%; height:140px; box-sizing:border-box; font-family:monospace; }
+    input, select { width:100%; box-sizing:border-box }
     .row { display:flex; gap:.5rem; align-items:center }
     .small { font-size:.9rem; color:#9bbbd9 }
     /* Popup button styles and visual "clicking" effect */
@@ -47,6 +50,18 @@
       transform: translateY(0) scale(1.02);
       box-shadow: 0 6px 18px rgba(0,0,0,0.35);
     }
+    /* Light mode overrides */
+    body.light { background: #f8fafc; color: #071022 }
+    body.light header { background: #ffffff; color: #071022 }
+    body.light .panel { background: #ffffff; color: #071022; border: 1px solid #e2e8f0 }
+    body.light input, body.light select, body.light textarea { background:#ffffff; color:#071022; border:1px solid #cbd5e1 }
+    /* Light mode for vis.js nodes */
+    body.light .vis-network .vis-label { color: #071022 !important; }
+    body.light .vis-network .vis-edge-label { color: #071022 !important; }
+
+    /* Button click effect */
+    button { transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms }
+    button:active { transform: translateY(2px) scale(0.995); box-shadow: inset 0 2px 6px rgba(0,0,0,0.15) }
   </style>
 </head>
 
@@ -56,8 +71,16 @@
   <h3 style="margin:0">Web Weasel — Graph Dashboard</h3>
   <nav style="margin-left:1rem">
     <a href="#" id="nav-dashboard">Dashboard</a> |
-    <a href="#" id="nav-upload">Upload</a>
+    <a href="#" id="nav-upload">Upload</a> |
+    <a href="#" id="nav-tasks">Tasks</a> |
+    <a href="/manage-operators" id="nav-manage">Manage Operators</a>
   </nav>
+
+  <div style="margin-left:auto; display:flex; gap:.5rem; align-items:center">
+  <button id="btn-export" title="Export graph JSON">Export</button>
+  <button id="toggle-theme">Light Mode</button>
+    <a href="/logout" style="color:#9bd0ff">Logout</a>
+  </div>
 </header>
 
 <main class="container">
@@ -66,24 +89,24 @@
 <section id="page-dashboard">
 
   <!-- BLOODHOUND-LIKE QUERY BAR -->
-  <div class="panel">
-    <label><strong>Cypher Query</strong></label>
-
-    <!-- Predefined Queries -->
-  <select id="preset-queries">
-    <option value="">Select a predefined query...</option>
-    <option value="MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 200">Full Graph (Limit 200)</option>
-    <option value="MATCH (n)-[r]->(m) WHERE m.domain = $domain RETURN n,r,m">All Paths Under Domain</option>
-    <option value="MATCH (n)-[r]->(m) WHERE m.subdomain = $domain RETURN n,r,m">All Paths Under Subdomain</option>
-    <option value="MATCH (p:Path {domain: $domain, path: $path})-[r]->(c) RETURN p,r,c">Filter by Path</option>
-  </select>
-
-    <!-- Query Editor -->
-    <textarea id="cypher-box" placeholder="Write or modify your Cypher query here..."></textarea>
-
-    <div class="row" style="margin-top:.5rem">
-      <button id="btn-run-query">Run Query</button>
-      <button id="btn-fit">Fit Graph</button>
+  <div class="panel" style="display:flex; gap:1rem; align-items:flex-start">
+    <div style="flex:1">
+      <label><strong>Cypher Query</strong></label>
+      <textarea id="cypher-box" placeholder="Write or modify your Cypher query here..."></textarea>
+    </div>
+    <div style="width:320px">
+      <label><strong>Presets / Run</strong></label>
+      <select id="preset-queries" style="width:100%">
+        <option value="">Select a predefined query...</option>
+        <option value="MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 200">Full Graph (Limit 200)</option>
+        <option value="MATCH (d:Domain {name: $domain}) OPTIONAL MATCH (d)-[r*0..]->(p) RETURN d,r,p LIMIT 500">All Paths Under Domain (recursive)</option>
+        <option value="MATCH (s:Subdomain {host: $subdomain}) OPTIONAL MATCH (s)-[r*1..]->(p) RETURN s,r,p LIMIT 500">All Paths Under Subdomain (recursive)</option>
+        <option value="MATCH (p:Path {domain: $domain, path: $path}) OPTIONAL MATCH (p)-[r*0..]->(c) RETURN p,r,c">Filter by Path (recursive)</option>
+      </select>
+      <div style="display:flex; gap:.5rem; margin-top:.5rem;">
+        <button id="btn-run-query">Run Query</button>
+        <button id="btn-fit">Fit Graph</button>
+      </div>
     </div>
   </div>
 
@@ -108,13 +131,30 @@
   </div>
 
   <!-- GRAPH -->
-  <div id="network"></div>
+  <div style="display:flex; gap:1rem">
+    <div id="network" style="flex:1"></div>
+    <div id="side-panel" class="panel" style="width:360px; max-height:600px; overflow:auto;">
+      <strong>Selected Node</strong>
+      <div id="selection-info" class="small">Click a node to see details</div>
 
-  <!-- NODE DETAILS -->
-  <div class="panel">
-    <strong>Selection</strong>
-    <div id="selection-info" class="small">Click a node to see details</div>
+      <hr style="border-color:#123248" />
+      <div>
+        <label>Node Data</label>
+        <div id="node-data"></div>
+      </div>
+
+      <hr style="border-color:#123248" />
+      <div>
+        <label>Notes</label>
+        <textarea id="node-notes" placeholder="Shared notes for this node"></textarea>
+        <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.5rem">
+          <button id="btn-save-notes">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- NODE DETAILS (moved to side-panel) -->
 
 </section>
 
@@ -130,12 +170,37 @@
       <input id="files" name="file" type="file" multiple required />
 
       <div class="row">
-        <button type="submit">Upload & Parse</button>
+        <button id="upload-submit" type="submit">Upload & Parse</button>
         <button type="button" id="btn-upload-reset">Reset</button>
       </div>
 
       <div class="upload-feedback" id="upload-feedback" style="white-space:pre-wrap;font-family:monospace;color:#bfefff"></div>
     </form>
+  </div>
+</section>
+
+<!-- ========================= TASKS ========================= -->
+<section id="page-tasks" class="hidden">
+  <div class="panel" style="max-width:100%; padding:1rem;">
+    <h2>Tasks</h2>
+    <p style="margin-bottom:1rem;">Check off endpoints as you scan them. Data is persisted across sessions.</p>
+    
+    <!-- Operator dropdowns section -->
+    <div id="operators-container" style="margin-bottom:2rem;">
+      <h3>Operator Tasks</h3>
+      <div id="operators-list" style="display:flex; flex-direction:column; gap:1rem;">
+        <!-- Operators will be dynamically loaded here -->
+      </div>
+    </div>
+
+    <!-- All unchecked section -->
+    <div id="all-container" style="margin-bottom:2rem;">
+      <h3>Globally Unchecked</h3>
+      <button id="btn-expand-all" style="margin-bottom:1rem;">Expand All Unchecked</button>
+      <div id="all-list" style="display:flex; flex-direction:column; gap:0.5rem; max-height:400px; overflow-y:auto;">
+        <!-- Endpoints will be populated here -->
+      </div>
+    </div>
   </div>
 </section>
 
@@ -156,18 +221,17 @@
 ">
   <h3 style="margin-top:0; color:#9bd0ff; font-size:1.1rem">Add Node</h3>
 
-  <label style="margin-top:.5rem">Parent Type</label>
+  <label style="margin-top:.5rem">Node Type</label>
   <div class="row" style="margin-bottom:.5rem">
-    <button class="parent-type-btn" data-type="domain">Domain</button>
     <button class="parent-type-btn" data-type="subdomain">Subdomain</button>
     <button class="parent-type-btn" data-type="path">Path</button>
   </div>
 
-  <label>Path Name</label>
-  <input id="popup-path" placeholder="/example/path" />
+  <label id="label-field1">Primary Field</label>
+  <input id="popup-path" placeholder="primary" />
 
-  <label>Domain</label>
-  <input id="popup-domain" placeholder="example.com" />
+  <label id="label-field2">Secondary Field</label>
+  <input id="popup-domain" placeholder="secondary" />
 
   <div class="row" style="justify-content:flex-end; margin-top:0.75rem;">
     <button id="popup-cancel" style="background:#112034; border:1px solid #15324a;">Cancel</button>
@@ -199,6 +263,26 @@ document.querySelectorAll(".parent-type-btn").forEach(btn => {
     selectedParentType = btn.dataset.type;
     document.querySelectorAll(".parent-type-btn").forEach(b => b.style.background="#071722");
     btn.style.background = "#1f3b5a";
+    
+    // Update labels based on selected type
+    const label1 = document.getElementById("label-field1");
+    const label2 = document.getElementById("label-field2");
+    const field1 = document.getElementById("popup-path");
+    const field2 = document.getElementById("popup-domain");
+    
+    if(selectedParentType === 'subdomain'){
+      label1.textContent = "Subdomain Host";
+      label2.textContent = "Base Domain";
+      field1.placeholder = "s3.example.com";
+      field2.placeholder = "example.com";
+      field2.disabled = false;
+    } else if(selectedParentType === 'path'){
+      label1.textContent = "Path";
+      label2.textContent = "Domain";
+      field1.placeholder = "/admin/users";
+      field2.placeholder = "example.com";
+      field2.disabled = false;
+    }
   };
 });
 
@@ -224,12 +308,16 @@ window.addEventListener("click", (e) => {
 /* ===================== NAV SPA ===================== */
 const pageDashboard = document.getElementById("page-dashboard");
 const pageUpload = document.getElementById("page-upload");
+const pageTasks = document.getElementById("page-tasks");
 
 document.getElementById("nav-dashboard").onclick = (e)=>{
-  e.preventDefault(); pageDashboard.classList.remove("hidden"); pageUpload.classList.add("hidden");
+  e.preventDefault(); pageDashboard.classList.remove("hidden"); pageUpload.classList.add("hidden"); pageTasks.classList.add("hidden");
 };
 document.getElementById("nav-upload").onclick = (e)=>{
-  e.preventDefault(); pageUpload.classList.remove("hidden"); pageDashboard.classList.add("hidden");
+  e.preventDefault(); pageUpload.classList.remove("hidden"); pageDashboard.classList.add("hidden"); pageTasks.classList.add("hidden");
+};
+document.getElementById("nav-tasks").onclick = (e)=>{
+  e.preventDefault(); pageTasks.classList.remove("hidden"); pageDashboard.classList.add("hidden"); pageUpload.classList.add("hidden"); loadTasksTab();
 };
 
 
@@ -252,6 +340,11 @@ const options = {
 function renderGraph(data){
   nodes.clear(); edges.clear();
   nodes.add(data.nodes); edges.add(data.edges);
+  
+  // Check each node for vuln property and update label if needed
+  data.nodes.forEach(nodeData => {
+    updateNodeLabelForVulnerability(nodeData, nodeData.id);
+  });
 
   if(!network){
     network = new vis.Network(container, { nodes, edges }, options);
@@ -296,48 +389,59 @@ function showContextMenu(x, y, nodeId, edgeId){
 
   if(nodeId){
     addMenuItem("Delete Node",
-      ()=> {
-        executeCypherQuery(`MATCH (n) WHERE elementId(n) = "${nodeId}" DETACH DELETE n`)
-        nodes.remove(nodeId);;
-    });
+      () => {
+        try {
+          executeCypherQuery(`MATCH (n) WHERE elementId(n) = "${nodeId}" DETACH DELETE n`);
+          nodes.remove(nodeId);
+        } catch (err) {
+          console.error('Delete node error:', err);
+          alert('Error deleting node: ' + err.message);
+        }
+      });
 
     addMenuItem("Delete Children",
-      ()=> {
-        executeCypherQuery(`
-        MATCH (n) WHERE elementId(n) = "${nodeId}"
-        MATCH (n)-[*1..]->(c)
-        DETACH DELETE c
-      `)
-
-        const childIds = getDescendants(nodeId).filter(id => id !== nodeId);
-        nodes.remove(childIds);
-        // Remove edges connected to deleted nodes
-        edges.forEach(edge => {
-          if (childIds.includes(edge.from) || childIds.includes(edge.to)) {
-            edges.remove(edge.id);
-          }
-        });
-    });
+      () => {
+        try {
+          executeCypherQuery(`
+            MATCH (n) WHERE elementId(n) = "${nodeId}"
+            MATCH (n)-[*1..]->(c)
+            DETACH DELETE c
+          `);
+          const childIds = getDescendants(nodeId).filter(id => id !== nodeId);
+          nodes.remove(childIds);
+          // Remove edges connected to deleted nodes
+          edges.forEach(edge => {
+            if (childIds.includes(edge.from) || childIds.includes(edge.to)) {
+              edges.remove(edge.id);
+            }
+          });
+        } catch (err) {
+          console.error('Delete children error:', err);
+          alert('Error deleting children: ' + err.message);
+        }
+      });
 
     addMenuItem("Delete Node + Children",
-      ()=> {
-        executeCypherQuery(`
-        MATCH (n) WHERE elementId(n) = "${nodeId}"
-        MATCH (n)-[*0..]->(c)
-        DETACH DELETE c
-      `)
-        const allIds = getDescendants(nodeId);
-
-        // 3. Remove from the visual graph
-        nodes.remove(allIds);
-        
-        // Remove edges too
-        edges.forEach(edge => {
-          if (allIds.includes(edge.from) || allIds.includes(edge.to)) {
-            edges.remove(edge.id);
-          }
-        });
-    });
+      () => {
+        try {
+          executeCypherQuery(`
+            MATCH (n) WHERE elementId(n) = "${nodeId}"
+            MATCH (n)-[*0..]->(c)
+            DETACH DELETE c
+          `);
+          const allIds = getDescendants(nodeId);
+          nodes.remove(allIds);
+          // Remove edges too
+          edges.forEach(edge => {
+            if (allIds.includes(edge.from) || allIds.includes(edge.to)) {
+              edges.remove(edge.id);
+            }
+          });
+        } catch (err) {
+          console.error('Delete node+children error:', err);
+          alert('Error deleting node and children: ' + err.message);
+        }
+      });
 
     addMenuItem("Add Child Node", () => {
       openAddNodePopup();
@@ -356,43 +460,104 @@ function showContextMenu(x, y, nodeId, edgeId){
       }
 
       newSubmit.onclick = async () => {
-        const path = document.getElementById("popup-path").value.trim();
-        const domain = document.getElementById("popup-domain").value.trim();
+        const field1 = document.getElementById("popup-path").value.trim();
+        const field2 = document.getElementById("popup-domain").value.trim();
 
-        if (!selectedParentType) return alert("Select a parent type!");
-        if (!domain) return alert("Enter a domain!");
-        if (!path) return alert("Enter a path!");
-        popup.classList.add("hidden");
+        if (!selectedParentType) return alert("Select a node type!");
+        
         const type = selectedParentType.charAt(0).toUpperCase() + selectedParentType.slice(1);
-
         let cypher = "";
-        if (type === "Domain" || type === "Path") {
-          cypher = `
-            MATCH (n) WHERE elementId(n) = "${nodeId}"
-            CREATE (p:${type} {domain: "${domain}", path: "${path}"})
-            CREATE (n)-[:Subdirectory]->(p)
-            RETURN elementId(p) AS id, p
-          `;
-        } else if (type === "Subdomain") {
-          cypher = `
-            MATCH (n) WHERE elementId(n) = "${nodeId}"
-            MERGE (d:Domain {name: "${domain}"})
-            MERGE (d)-[:Subdomain]->(n)
-            MERGE (p:Path {domain: "${domain}", path: "${path}"})
-            MERGE (n)-[:Subdirectory]->(p)
-            RETURN elementId(p) AS id, p
-          `;
+        let params = {};
+        let domain = null;
+
+        try {
+          if (type === 'Subdomain'){
+            // For subdomain: field1 = subdomain host (s3.example.com), field2 = base domain (example.com)
+            if (!field1 || !field2) return alert("Enter both subdomain host and base domain!");
+            domain = field2;
+            const subdomainHost = field1;
+            cypher = `
+              MERGE (bd:Domain {name: $domain})
+              MERGE (s:Subdomain {host: $subdomainHost})
+              SET s.domain = $domain
+              MERGE (bd)-[:Subdomain]->(s)
+              RETURN elementId(s) AS id, s
+            `;
+            params = { domain, subdomainHost };
+          } else if (type === 'Path'){
+            // For path: field1 = path (/admin), field2 = domain
+            if (!field1 || !field2) return alert("Enter both path and domain!");
+            domain = field2;
+            const path = field1;
+            cypher = `
+              MATCH (n) WHERE elementId(n) = $nodeId
+              CREATE (p:Path {domain: $domain, path: $path})
+              CREATE (n)-[:Subdirectory]->(p)
+              RETURN elementId(p) AS id, p
+            `;
+            params = { nodeId, domain, path };
+          }
+
+          const res = await executeCypherQuery(cypher, params);
+          
+          const rec = res.records[0];
+          let newNodeId = null;
+          for(const key in rec){
+            const val = rec[key];
+            if(val && typeof val === 'object' && val._type === 'node'){
+              newNodeId = val.element_id;
+              break;
+            }
+          }
+          
+          if(!newNodeId){
+            alert('Could not extract node ID from response');
+            return;
+          }
+          
+          // Success! Add the node to the graph
+          nodes.add({ id: newNodeId, label: field1 || field2, group: type, domain });
+          if(nodeId) edges.add({ from: nodeId, to: newNodeId, label: 'Subdirectory' });
+          popup.classList.add('hidden');
+          
+        } catch(err) {
+          console.error('Node creation error:', err, 'Cypher:', cypher);
+          alert('Error creating node: ' + err.message);
         }
-
-        const records = await executeCypherQuery(cypher, { domain, path });
-
-        const newNodeId = records[0]["id"];
-        nodes.add({ id: newNodeId, label: path || domain, group: type, domain });
-        edges.add({ from: nodeId, to: newNodeId, arrows: "Subdirectory" });
       };
     });
+    // vulnerability marker
+    addVulnMenu(nodeId);
   }
 
+  // Handle edge right-click menu
+  if(edgeId){
+    const edge = edges.get(edgeId);
+    if(edge){
+      addMenuItem("Delete Edge", async () => {
+        try {
+          const res = await fetch("/api/delete-edge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              start_id: edge.from,
+              end_id: edge.to,
+              rel_type: edge.label
+            })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          // Remove edge from visualization
+          edges.remove(edgeId);
+          console.log('Edge deleted successfully');
+        } catch (err) {
+          console.error('Delete edge error:', err);
+          alert('Error deleting edge: ' + err.message);
+        }
+      });
+    }
+  }
 
   // if nothing was clicked, don't show menu
   if(menu.innerHTML.trim() === "") return;
@@ -419,13 +584,28 @@ function addMenuItem(text, handler){
 
 document.addEventListener("click", ()=> menu.style.display = "none");
 
-async function executeCypherQuery(cypher) {
-   const res = await fetch("/api/execute-cypher", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: cypher, params: {} })
-  });
-  return await res.json();
+async function executeCypherQuery(cypher, params = {}) {
+  try {
+    const res = await fetch("/api/execute-cypher", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: cypher, params: params })
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    
+    return data;
+  } catch (err) {
+    console.error('Query execution error:', err, 'Cypher:', cypher);
+    throw err;
+  }
 }
 
 function getDescendants(rootId) {
@@ -451,24 +631,36 @@ function getDescendants(rootId) {
 
 /* ===================== RUN CYPHER QUERY ===================== */
 document.getElementById("btn-run-query").onclick = async ()=>{
-  let query = document.getElementById("cypher-box").value.trim();
-  let domain = document.getElementById("param-domain").value.trim();
-  let subdomain = document.getElementById("param-subdomain").value.trim();
-  let path = document.getElementById("param-path").value.trim();
+  try {
+    let query = document.getElementById("cypher-box").value.trim();
+    let domain = document.getElementById("param-domain").value.trim();
+    let subdomain = document.getElementById("param-subdomain").value.trim();
+    let path = document.getElementById("param-path").value.trim();
 
-  const payload = { query, params:{} };
-  if(subdomain) payload.params.subdomain = subdomain;
-  if(path) payload.params.path = path;
-  if(domain) payload.params.domain = domain;
+    const payload = { query, params:{} };
+    if(subdomain) payload.params.subdomain = subdomain;
+    if(path) payload.params.path = path;
+    if(domain) payload.params.domain = domain;
 
-  const res = await fetch("/api/graph", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify(payload)
-  });
+    const res = await fetch("/api/graph", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify(payload)
+    });
 
-  const data = await res.json();
-  renderGraph(data);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    renderGraph(data);
+  } catch (err) {
+    console.error('Query execution error:', err);
+    alert('Error running query: ' + err.message);
+  }
 };
 
 
@@ -492,10 +684,456 @@ document.getElementById("upload-form").onsubmit = async (e)=>{
   for (const f of files) fd.append("file", f);
   fd.append("url", url);
 
-  const res = await fetch("/upload", { method:"POST", body:fd });
-  const data = await res.json();
-  document.getElementById("upload-feedback").textContent = JSON.stringify(data, null, 2);
+  const submitBtn = document.getElementById('upload-submit') || document.querySelector('#upload-form button[type=submit]');
+  if(submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Uploading...'; }
+  try{
+    const res = await fetch("/upload", { method:"POST", body:fd });
+    const data = await res.json();
+    document.getElementById("upload-feedback").textContent = JSON.stringify(data, null, 2);
+  }catch(err){
+    document.getElementById("upload-feedback").textContent = String(err);
+  } finally {
+    if(submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Upload & Parse'; }
+  }
 };
+
+// Theme toggle
+document.getElementById('toggle-theme').onclick = ()=>{
+  const b = document.body;
+  if(b.classList.contains('light')){
+    b.classList.remove('light');
+    document.getElementById('toggle-theme').textContent = 'Light Mode';
+    // Update graph node colors to light text
+    options.nodes.font.color = "#e6eef8";
+    options.edges.font.color = "#7aa7d7";
+  } else {
+    b.classList.add('light');
+    document.getElementById('toggle-theme').textContent = 'Dark Mode';
+    // Update graph node colors to dark text
+    options.nodes.font.color = "#071022";
+    options.edges.font.color = "#071022";
+  }
+  // Redraw the network with new colors
+  if(network) {
+    network.setOptions(options);
+  }
+}
+
+// set initial toggle label based on current body class
+document.getElementById('toggle-theme').textContent = document.body.classList.contains('light') ? 'Dark Mode' : 'Light Mode';
+// Set initial graph colors based on theme
+if(document.body.classList.contains('light')){
+  options.nodes.font.color = "#071022";
+  options.edges.font.color = "#071022";
+}
+
+// Export handler
+document.getElementById('btn-export').onclick = async ()=>{
+  const res = await fetch('/api/export');
+  const data = await res.json();
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'neo4j-export.json';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+// Side panel functions
+function populateSidePanel(node){
+  const el = document.getElementById('node-data');
+  el.innerHTML = '';
+  const props = node || {};
+  
+  // Build full URL if this is a path or subdomain node
+  let fullUrl = null;
+  if(node && (props.group === 'Path' || props.group === 'Subdomain')){
+    if(props.group === 'Path'){
+      // Full URL = domain + path
+      fullUrl = (props.domain || '') + (props.path || '');
+    } else if(props.group === 'Subdomain'){
+      // Full URL = host (which is the subdomain label)
+      fullUrl = props.label || props.host || '';
+    }
+  }
+  
+  // Add full URL row at the top if available
+  if(fullUrl){
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.justifyContent='space-between'; row.style.gap='8px'; row.style.padding='4px 0';
+    row.style.fontWeight='bold'; row.style.color='#9bd0ff';
+    const left = document.createElement('div'); left.textContent = 'Full URL: ' + fullUrl;
+    const copy = document.createElement('button'); copy.textContent='Copy'; copy.onclick = ()=>{navigator.clipboard.writeText(fullUrl)};
+    row.appendChild(left); row.appendChild(copy);
+    el.appendChild(row);
+    // Add separator
+    const sep = document.createElement('div'); sep.style.height='1px'; sep.style.background='#123248'; sep.style.margin='4px 0';
+    el.appendChild(sep);
+  }
+  
+  // Add other properties (skip internal fields)
+  const skipFields = new Set(['scanned_host', 'id', 'group']); // Don't show these
+  for(const k of Object.keys(props)){
+    if(skipFields.has(k)) continue; // Skip this field
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.justifyContent='space-between'; row.style.gap='8px'; row.style.padding='4px 0';
+    const left = document.createElement('div'); left.textContent = k + ': ' + String(props[k]);
+    const copy = document.createElement('button'); copy.textContent='Copy'; copy.onclick = ()=>{navigator.clipboard.writeText(String(props[k]))};
+    row.appendChild(left); row.appendChild(copy);
+    el.appendChild(row);
+  }
+}
+
+document.getElementById('btn-save-notes').onclick = async ()=>{
+  try {
+    const txt = document.getElementById('node-notes').value;
+    const node = window._lastSelectedNodeId;
+    if(!node) return alert('No node selected');
+    const res = await fetch('/api/node-notes', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({node_id: node, notes: txt})
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    alert('Saved');
+  } catch (err) {
+    console.error('Save notes error:', err);
+    alert('Error saving notes: ' + err.message);
+  }
+}
+
+// Add 'Mark Vulnerability' action to context menu when node present
+const originalAddMenuItem = addMenuItem;
+function addVulnMenu(nodeId){
+  addMenuItem('Mark Vulnerability', async ()=>{
+    try {
+      const q = `MATCH (n) WHERE elementId(n) = "${nodeId}" SET n.vuln = true RETURN elementId(n) AS id, n`;
+      await executeCypherQuery(q);
+      // update visual node: append a skull emoji to label
+      const n = nodes.get(nodeId);
+      if(n && !n.label.includes('☠️')) {
+        nodes.update({id: nodeId, label: (n.label || '') + ' ☠️'});
+      }
+    } catch(err) {
+      console.error('Mark vulnerability error:', err);
+      // Only show alert for actual errors (network, parsing), not for empty results
+      if(err.message && !err.message.includes('No records')) {
+        alert('Error marking vulnerability: ' + err.message);
+      }
+    }
+  });
+  addMenuItem('Unmark Vulnerability', async ()=>{
+    try {
+      const q = `MATCH (n) WHERE elementId(n) = "${nodeId}" SET n.vuln = false RETURN elementId(n) AS id, n`;
+      await executeCypherQuery(q);
+      // remove skull emoji from label
+      const n = nodes.get(nodeId);
+      if(n) {
+        const newLabel = (n.label || '').replace(/\s*☠️\s*$/, '');
+        nodes.update({id: nodeId, label: newLabel});
+      }
+    } catch(err) {
+      console.error('Unmark vulnerability error:', err);
+      // Only show alert for actual errors (network, parsing), not for empty results
+      if(err.message && !err.message.includes('No records')) {
+        alert('Error unmarking vulnerability: ' + err.message);
+      }
+    }
+  });
+}
+
+// Function to display vulnerability badge if vuln property is true
+function updateNodeLabelForVulnerability(nodeData, nodeId){
+  if(nodeData && nodeData.vuln && !nodeData.label?.includes('☠️')){
+    nodes.update({id: nodeId, label: (nodeData.label || '') + ' ☠️'});
+  }
+}
+
+// Ensure side panel and selection update after graph render
+const originalRender = renderGraph;
+renderGraph = function(data){
+  originalRender(data);
+  // add click hook
+  network.off && network.off('click');
+  network.on('click', (params)=>{
+    if(params.nodes && params.nodes.length){
+      const nid = params.nodes[0];
+      window._lastSelectedNodeId = nid;
+      const node = nodes.get(nid) || {};
+      document.getElementById('selection-info').textContent = JSON.stringify(node, null, 2);
+      populateSidePanel(node);
+      // load notes
+      fetch('/api/node-tasks/' + nid).then(r=>r.json()).then(d=>{document.getElementById('node-notes').value = d.notes || ''});
+    }
+  });
+}
+
+// ===== TASKS TAB FUNCTIONS =====
+let taskOperators = [];
+
+async function loadOperators() {
+  try {
+    const res = await fetch("/api/users");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    taskOperators = data.operators || [];
+  } catch(err) {
+    console.error("Error loading operators:", err);
+    taskOperators = [];
+  }
+}
+
+async function loadTasksTab() {
+  try {
+    await loadOperators();
+    
+    // Clear containers
+    const operatorsList = document.getElementById("operators-list");
+    const allList = document.getElementById("all-list");
+    operatorsList.innerHTML = "";
+    allList.innerHTML = "";
+    
+    // Load operator dropdowns
+    for(const op of taskOperators) {
+      const opContainer = document.createElement("div");
+      opContainer.style.cssText = "border:1px solid #15324a; padding:1rem; border-radius:4px; margin-bottom:1rem;";
+      
+      const label = document.createElement("h4");
+      label.textContent = op;
+      label.style.margin = "0 0 0.5rem 0";
+  opContainer.appendChild(label);
+  // Mark this container with the operator name so lookup is deterministic
+  opContainer.setAttribute('data-operator', op);
+      
+      // Unchecked section
+  const uncheckedLabel = document.createElement("label");
+  uncheckedLabel.textContent = "Unchecked Endpoints";
+  uncheckedLabel.style.cssText = "display:block; margin-top:0.5rem; font-weight:bold; color:#9bd0ff;";
+      
+      const uncheckedList = document.createElement("div");
+      uncheckedList.style.cssText = "border:1px solid #7aa7d7; padding:0.5rem; border-radius:4px; max-height:250px; overflow-y:auto; margin-bottom:1rem;";
+  uncheckedList.setAttribute('data-role', 'unchecked-list');
+      
+      // Checked section
+  const checkedLabel = document.createElement("label");
+  checkedLabel.textContent = "Checked Endpoints";
+  checkedLabel.style.cssText = "display:block; margin-top:0.5rem; font-weight:bold; color:#9bd0ff;";
+      
+      const checkedList = document.createElement("div");
+      checkedList.style.cssText = "border:1px solid #7aa7d7; padding:0.5rem; border-radius:4px; max-height:250px; overflow-y:auto;";
+  checkedList.setAttribute('data-role', 'checked-list');
+      
+      // Load both lists
+      const loadLists = async () => {
+        try {
+          const res = await fetch(`/api/unchecked-endpoints?operator=${encodeURIComponent(op)}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          
+          // Clear lists
+          uncheckedList.innerHTML = "";
+          checkedList.innerHTML = "";
+          
+          // Get all endpoints to find checked ones
+          const checkedRes = await fetch(`/api/all-endpoints`);
+          const checkedData = await checkedRes.json();
+          const allEndpoints = checkedData.endpoints || [];
+          
+          // Find checked endpoints for this operator
+          const checkedEndpoints = allEndpoints.filter(ep => {
+            const tasks = window.tasksData || {};
+            const taskInfo = tasks[ep.id] || {};
+            const checkedBy = taskInfo.checked_by || {};
+            return op in checkedBy;
+          });
+          
+          // Display unchecked
+          if(data.endpoints.length === 0) {
+            uncheckedList.innerHTML = "<p style='color:#9bd0ff;'>✓ All checked!</p>";
+          } else {
+            data.endpoints.forEach(ep => {
+              const item = document.createElement("div");
+              item.setAttribute("data-endpoint-id", ep.id);
+              item.setAttribute("data-endpoint-label", ep.label);
+              item.style.cssText = "padding:0.5rem; border-bottom:1px solid #15324a; display:flex; justify-content:space-between; align-items:center; color:#9bd0ff;";
+              item.innerHTML = `<span style="flex:1;">${ep.label}</span><button style="padding:0.25rem 0.5rem; font-size:0.8rem; white-space:nowrap;" onclick="event.stopPropagation(); markEndpointChecked('${ep.id}', '${op}'); return false;">Mark Done</button>`;
+              uncheckedList.appendChild(item);
+            });
+          }
+          
+          // Display checked
+          if(checkedEndpoints.length === 0) {
+            checkedList.innerHTML = "<p style='color:#9bd0ff;'>None checked yet</p>";
+          } else {
+            checkedEndpoints.forEach(ep => {
+              const item = document.createElement("div");
+              item.setAttribute("data-endpoint-id", ep.id);
+              item.setAttribute("data-endpoint-label", ep.label);
+              item.style.cssText = "padding:0.5rem; border-bottom:1px solid #15324a; display:flex; justify-content:space-between; align-items:center; color:#9bd0ff;";
+              item.innerHTML = `<span style="flex:1;">✓ ${ep.label}</span><button style="padding:0.25rem 0.5rem; font-size:0.8rem; white-space:nowrap;" onclick="event.stopPropagation(); unmarkEndpointChecked('${ep.id}', '${op}'); return false;">Undo</button>`;
+              checkedList.appendChild(item);
+            });
+          }
+        } catch(err) {
+          console.error("Error loading operator lists:", err);
+          uncheckedList.innerHTML = `<p style='color:#ff6b6b;'>Error: ${err.message}</p>`;
+        }
+      };
+      
+      // Load on tab open
+      await loadLists();
+      
+      opContainer.appendChild(uncheckedLabel);
+      opContainer.appendChild(uncheckedList);
+      opContainer.appendChild(checkedLabel);
+      opContainer.appendChild(checkedList);
+      operatorsList.appendChild(opContainer);
+    }
+    
+    // Load "All unchecked" button
+    const allBtn = document.getElementById("btn-expand-all");
+    allBtn.onclick = async () => {
+      try {
+        const res = await fetch(`/api/unchecked-endpoints?operator=all`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        allList.innerHTML = "";
+        if(data.endpoints.length === 0) {
+          allList.innerHTML = "<p style='color:#9bd0ff;'>✓ All endpoints checked by someone!</p>";
+        } else {
+          data.endpoints.forEach(ep => {
+            const item = document.createElement("div");
+            item.style.cssText = "padding:0.5rem; border-bottom:1px solid #15324a; color:#9bd0ff;";
+            item.innerHTML = `<strong>${ep.label}</strong><br/><small>Type: ${ep.type}</small>`;
+            allList.appendChild(item);
+          });
+        }
+      } catch(err) {
+        console.error("Error loading all unchecked:", err);
+        alert("Error loading endpoints: " + err.message);
+      }
+    };
+    
+  } catch(err) {
+    console.error("Error loading Tasks tab:", err);
+  }
+}
+
+async function markEndpointChecked(nodeId, operator) {
+  try {
+    const res = await fetch(`/api/mark-checked`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node_id: nodeId, operator })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
+    // Find the operator container deterministically (match attribute exactly)
+    const operatorContainer = Array.from(document.querySelectorAll('[data-operator]')).find(el => el.getAttribute('data-operator') === operator);
+    if (!operatorContainer) {
+      console.error('Could not find operator container for', operator);
+      return;
+    }
+
+    // Find and remove the item from unchecked list inside this operator container
+    const uncheckedItem = operatorContainer.querySelector(`div[data-endpoint-id="${nodeId}"]`);
+    if (!uncheckedItem) return;
+
+    const epLabel = uncheckedItem.getAttribute("data-endpoint-label");
+    
+    // Find the checked list in this operator container by role
+    const checkedList = operatorContainer.querySelector("[data-role='checked-list']");
+    if (!checkedList) {
+      console.error("Could not find checked list");
+      return;
+    }
+    
+    // Remove "None checked yet" message if present
+    const noneMsg = checkedList.querySelector("p");
+    if (noneMsg && noneMsg.textContent === "None checked yet") {
+      noneMsg.remove();
+    }
+    
+    // Create new checked item
+    const newItem = document.createElement("div");
+    newItem.setAttribute("data-endpoint-id", nodeId);
+    newItem.setAttribute("data-endpoint-label", epLabel);
+    newItem.style.cssText = "padding:0.5rem; border-bottom:1px solid #15324a; display:flex; justify-content:space-between; align-items:center; color:#9bd0ff;";
+    newItem.innerHTML = `<span style="flex:1;">✓ ${epLabel}</span><button style="padding:0.25rem 0.5rem; font-size:0.8rem; white-space:nowrap;" onclick="event.stopPropagation(); unmarkEndpointChecked('${nodeId}', '${operator}'); return false;">Undo</button>`;
+    checkedList.appendChild(newItem);
+    
+    // Remove from unchecked list
+    uncheckedItem.remove();
+    
+    // Check if unchecked list is now empty and show placeholder
+    const uncheckedListEl = operatorContainer.querySelector("[data-role='unchecked-list']");
+    if (uncheckedListEl && uncheckedListEl.children.length === 0) {
+      uncheckedListEl.innerHTML = "<p style='color:#9bd0ff;'>✓ All checked!</p>";
+    }
+    
+  } catch(err) {
+    console.error("Error marking checked:", err);
+    alert("Error marking endpoint: " + err.message);
+  }
+}
+
+async function unmarkEndpointChecked(nodeId, operator) {
+  try {
+    const res = await fetch(`/api/mark-checked`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node_id: nodeId, operator, checked: false })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
+    // Find the operator container deterministically (match attribute exactly)
+    const operatorContainer = Array.from(document.querySelectorAll('[data-operator]')).find(el => el.getAttribute('data-operator') === operator);
+    if (!operatorContainer) {
+      console.error('Could not find operator container for', operator);
+      return;
+    }
+
+    // Find and remove the item from checked list inside this operator container
+    const checkedItem = operatorContainer.querySelector(`div[data-endpoint-id="${nodeId}"]`);
+    if (!checkedItem) return;
+
+    const epLabel = checkedItem.getAttribute("data-endpoint-label");
+    
+    // Find the unchecked list in this operator container by role
+    const uncheckedList = operatorContainer.querySelector("[data-role='unchecked-list']");
+    if (!uncheckedList) {
+      console.error("Could not find unchecked list");
+      return;
+    }
+    
+    // Remove "All checked!" message if present
+    const allCheckedMsg = uncheckedList.querySelector("p");
+    if (allCheckedMsg && allCheckedMsg.textContent === "✓ All checked!") {
+      allCheckedMsg.remove();
+    }
+    
+    // Create new unchecked item
+    const newItem = document.createElement("div");
+    newItem.setAttribute("data-endpoint-id", nodeId);
+    newItem.setAttribute("data-endpoint-label", epLabel);
+    newItem.style.cssText = "padding:0.5rem; border-bottom:1px solid #15324a; display:flex; justify-content:space-between; align-items:center; color:#9bd0ff;";
+    newItem.innerHTML = `<span style="flex:1;">${epLabel}</span><button style="padding:0.25rem 0.5rem; font-size:0.8rem; white-space:nowrap;" onclick="event.stopPropagation(); markEndpointChecked('${nodeId}', '${operator}'); return false;">Mark Done</button>`;
+    uncheckedList.appendChild(newItem);
+    
+    // Remove from checked list
+    checkedItem.remove();
+    
+    // Check if checked list is now empty and show placeholder
+    const checkedListEl = operatorContainer.querySelector("[data-role='checked-list']");
+    if (checkedListEl && checkedListEl.children.length === 0) {
+      checkedListEl.innerHTML = "<p style='color:#9bd0ff;'>None checked yet</p>";
+    }
+    
+  } catch(err) {
+    console.error("Error unmarking checked:", err);
+    alert("Error unmarking endpoint: " + err.message);
+  }
+}
 </script>
 
 

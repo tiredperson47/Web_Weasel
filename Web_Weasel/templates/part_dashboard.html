@@ -1,0 +1,72 @@
+<!-- Part: Dashboard section -->
+<section id="page-dashboard">
+
+  <!-- BLOODHOUND-LIKE QUERY BAR -->
+  <div class="panel" style="display:flex; gap:1rem; align-items:flex-start">
+    <div style="flex:1">
+      <label><strong>Cypher Query</strong></label>
+      <textarea id="cypher-box" placeholder="Write or modify your Cypher query here..."></textarea>
+    </div>
+    <div style="width:320px">
+      <label><strong>Presets / Run</strong></label>
+      <select id="preset-queries" style="width:100%">
+        <option value="">Select a predefined query...</option>
+        <option value="MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 200">Full Graph (Limit 200)</option>
+        <option value="MATCH (d:Domain {name: $domain}) OPTIONAL MATCH (d)-[r*0..]->(p) RETURN d,r,p LIMIT 500">All Paths Under Domain (recursive)</option>
+        <option value="MATCH (s:Subdomain {host: $subdomain}) OPTIONAL MATCH (s)-[r*1..]->(p) RETURN s,r,p LIMIT 500">All Paths Under Subdomain (recursive)</option>
+        <option value="MATCH (p:Path {domain: $domain, path: $path}) OPTIONAL MATCH (p)-[r*0..]->(c) RETURN p,r,c">Filter by Path (recursive)</option>
+      </select>
+      <div style="display:flex; gap:.5rem; margin-top:.5rem;">
+        <button id="btn-run-query">Run Query</button>
+        <button id="btn-fit">Fit Graph</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARAMETER FILTERS (Bloodhound style) -->
+  <div class="panel">
+    <div class="row">
+      <div style="flex:1">
+        <label>Filter by Domain</label>
+        <input id="param-domain" placeholder="example.com" />
+      </div>
+
+      <div style="flex:1">
+        <label>Filter by Subdomain</label>
+        <input id="param-subdomain" placeholder="www.example.com" />
+      </div>
+
+      <div style="flex:1">
+        <label>Filter by Path</label>
+        <input id="param-path" placeholder="/admin/login" />
+      </div>
+    </div>
+  </div>
+
+  <!-- GRAPH -->
+  <div style="display:flex; gap:1rem">
+    <div id="network" style="flex:1"></div>
+    <div id="side-panel" class="panel" style="width:360px; max-height:600px; overflow:auto;">
+      <strong>Selected Node</strong>
+      <div id="selection-info" class="small">Click a node to see details</div>
+
+      <hr style="border-color:#123248" />
+      <div>
+        <label>Node Data</label>
+        <div id="node-data"></div>
+      </div>
+
+      <hr style="border-color:#123248" />
+      <div>
+        <label>Notes</label>
+        <textarea id="node-notes" placeholder="Shared notes for this node"></textarea>
+        <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.5rem">
+          <button id="btn-save-notes">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NODE DETAILS (moved to side-panel) -->
+
+</section>

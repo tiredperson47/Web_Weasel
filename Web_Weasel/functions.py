@@ -8,7 +8,7 @@ from pathlib import Path
 with open('../neo4j_auth.txt', 'r') as file:
     tmp = file.read()
     creds = tmp.rstrip().split('/')
-driver = GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("neo4j", creds[1]))
+driver = GraphDatabase.driver("bolt://neo4j:7687", auth=("neo4j", creds[1]))
 
 
 
@@ -33,31 +33,52 @@ ipv4_re = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 def parse_host(input_str):
     """
     Takes either:
-        - raw host (example.com)
-        - URL (https://example.com/path)
+        - raw host (example.com or example.com:8000)
+        - URL (https://example.com:8000/path)
     Returns dict with:
-        - base_domain
-        - subdomain
-        - type
+        - base_domain: domain or IP (without port)
+        - full_host: full hostname/IP (without port)
+        - port: port number (or None)
+        - base_path: path component
+        - has_subdomain: boolean
     """
+    port = None
+    
     # Normalize input: parse as URL if it has a scheme
     if "://" in input_str:
         parsed = urlparse(input_str)
         host = parsed.hostname  # automatically strips scheme, path, port
+        port = parsed.port
         base_path = parsed.path.rstrip("/") or None
     else:
+        # Manual parsing for host:port or host/path
         if "/" in input_str:
-            host, path = input_str.split("/", 1)
+            host_part, path = input_str.split("/", 1)
             base_path = "/" + path.rstrip("/") if path else None
         else:
-            host = input_str
+            host_part = input_str
             base_path = None
+        
+        # Check for port in host_part
+        if ":" in host_part:
+            host, port_str = host_part.rsplit(":", 1)
+            try:
+                port = int(port_str)
+            except ValueError:
+                # Not a valid port, treat whole thing as hostname
+                host = host_part
+                port = None
+        else:
+            host = host_part
 
     if host is None:
         raise ValueError(f"Invalid host in input: {input_str}")
 
-    # Now we safely have only the hostnam
+    # Now we safely have only the hostname (without port/scheme/path)
     parts = host.split('.')
+
+    # Build identifier with port if present
+    host_with_port = f"{host}:{port}" if port else host
 
     # -------------------------------
     # Case 1: Pure IPv4
@@ -66,13 +87,15 @@ def parse_host(input_str):
         return {
             "base_domain": host,
             "full_host": host,
+            "host_with_port": host_with_port,
+            "port": port,
             "base_path": base_path,
             "has_subdomain": False
         }
 
     # -------------------------------
     # Case 2: IPv4 WITH a subdomain
-    # Example: s3.monitor.192.168.1.10
+    # Example: s3.monitor.192.168.1.10 or s3.monitor.192.168.1.10:8000
     # -------------------------------
     if len(parts) > 4 and ipv4_re.match(".".join(parts[-4:])):
         ip = ".".join(parts[-4:])
@@ -80,18 +103,23 @@ def parse_host(input_str):
         return {
             "base_domain": ip,
             "full_host": sub,
+            "host_with_port": f"{sub}:{port}" if port else sub,
+            "port": port,
             "base_path": base_path,
             "has_subdomain": True
         }
 
     # -------------------------------
     # Case 3: Domain with subdomains
+    # Example: s3.example.com
     # -------------------------------
     if len(parts) >= 3:
         base = ".".join(parts[-2:])
         return {
             "base_domain": base,
             "full_host": ".".join(parts[:-2]) + f".{base}",
+            "host_with_port": host_with_port,
+            "port": port,
             "base_path": base_path,
             "has_subdomain": True
         }
@@ -103,6 +131,8 @@ def parse_host(input_str):
         return {
             "base_domain": host,
             "full_host": host,
+            "host_with_port": host_with_port,
+            "port": port,
             "base_path": base_path,
             "has_subdomain": False
         }
@@ -113,6 +143,8 @@ def parse_host(input_str):
     return {
         "base_domain": host,
         "full_host": host,
+        "host_with_port": host_with_port,
+        "port": port,
         "base_path": base_path,
         "has_subdomain": False
     }
@@ -121,8 +153,15 @@ def gobuster2json(upload, url):
     parsed_host = parse_host(url)
     base_domain = parsed_host["base_domain"]
     full_host = parsed_host["full_host"]
+    host_with_port = parsed_host.get("host_with_port", full_host)
+    port = parsed_host.get("port")
     base_path = parsed_host["base_path"]
     has_subdomain = parsed_host["has_subdomain"]
+    
+    # If we have a port, use host_with_port as the domain node name
+    # This ensures targets like 192.168.1.10:8000 are stored with the port
+    domain_node_name = host_with_port if port else base_domain
+    
     output = {"domains": [], "base_domains": []}
 
     for data in upload:
@@ -171,8 +210,8 @@ def gobuster2json(upload, url):
                     "parent_type": parent_type,
                     "code": int(match.group("code")) if match.group("code") else None,
                     "size": int(match.group("size")) if match.group("size") else None,
-                    "scanned_host": full_host,
-                    "base_domain": base_domain
+                    "scanned_host": host_with_port,
+                    "base_domain": domain_node_name
                 })
 
             elif match := vhost_pattern.search(line):
@@ -184,14 +223,14 @@ def gobuster2json(upload, url):
 
         if dir_results:
             output["domains"].append({
-                "scanned_host": full_host,
-                "base_domain": base_domain,
+                "scanned_host": host_with_port,
+                "base_domain": domain_node_name,
                 "base_path": base_path,
                 "results": dir_results
             })
         if vhost_results:
             output["base_domains"].append({
-                "base_domain": base_domain,
+                "base_domain": domain_node_name,
                 "subdomains": vhost_results
             })
 
@@ -224,14 +263,41 @@ def insert_json(tx, data):
 
             if parent_type == "subdomain":
                 # attach path under the Subdomain node with host = scanned_host
+                # Also build intermediate path nodes so nested paths create parent-child paths
                 tx.run("""
                     MERGE (s:Subdomain {host: $host})
                     SET s.domain = coalesce(s.domain, $base_domain)
                     MERGE (d:Domain {name: $base_domain})
                     MERGE (d)-[:Subdomain]->(s)
-                    MERGE (p:Path {domain: $base_domain, path: $path})
-                    MERGE (s)-[:Subdirectory]->(p)
-                """, host=scanned_host, base_domain=base_domain, path=path)
+                """, host=scanned_host, base_domain=base_domain)
+
+                # Build hierarchical Path nodes for each prefix of the path
+                # e.g. /a/b/c -> create /a, /a/b, /a/b/c and connect them
+                parts = [p for p in path.split('/') if p]
+                prefix = ''
+                prev = None
+                for part in parts:
+                    prefix = prefix + '/' + part
+                    # create current path node
+                    tx.run("""
+                        MERGE (pp:Path {domain: $base_domain, path: $p})
+                        SET pp.code = coalesce(pp.code, $code), pp.size = coalesce(pp.size, $size)
+                    """, base_domain=base_domain, p=prefix, code=code, size=size)
+                    # attach to subdomain if first
+                    if prev is None:
+                        tx.run("""
+                            MATCH (s:Subdomain {host: $host})
+                            MERGE (s)-[:Subdirectory]->(pp:Path {domain: $base_domain, path: $p})
+                        """, host=scanned_host, base_domain=base_domain, p=prefix)
+                    else:
+                        # connect prev -> current
+                        tx.run("""
+                            MERGE (prev:Path {domain: $base_domain, path: $prev_path})
+                            MERGE (cur:Path {domain: $base_domain, path: $p})
+                            MERGE (prev)-[:Subdirectory]->(cur)
+                        """, base_domain=base_domain, prev_path=prev, p=prefix)
+
+                    prev = prefix
             elif parent_type == "path":
                 tx.run("""
                     MERGE (pp:Path {domain: $base_domain, path: $parent})
@@ -273,9 +339,14 @@ def add_node(nodes, neo_node):
         "Node"
     )
 
+    # Include commonly useful properties so the frontend can build full URLs and show vuln status
     nodes[node_id] = {
         "group": list(neo_node.labels)[0] if neo_node.labels else "Unknown",
         "id": node_id,
         "label": label,
-        "domain": neo_node.get("domain") or neo_node.get("name")
+        "domain": neo_node.get("domain") or neo_node.get("name"),
+        "path": neo_node.get("path"),
+        "host": neo_node.get("host"),
+        "scanned_host": neo_node.get("scanned_host"),
+        "vuln": neo_node.get("vuln") if neo_node.get("vuln") is not None else False,
     }

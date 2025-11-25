@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Manage Operators</title>
+  <style>
+    body { font-family:Inter, system-ui; background:#0f1724; color:#e6eef8; padding:1rem }
+    .card { background:#071022; padding:1rem; border-radius:8px; max-width:800px }
+    input, select { padding:.5rem; border-radius:6px; border:1px solid #15324a; background:#071722; color:#e6eef8 }
+    button { padding:.5rem 1rem; border-radius:6px; background:#9bd0ff; border:none; color:#071022 }
+    table { width:100%; border-collapse:collapse }
+    td, th { padding:.5rem; border-bottom:1px solid #123248 }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>Manage Operators</h3>
+    <p><a href="/dashboard">Back to Dashboard</a></p>
+
+    <h4>Create Operator</h4>
+    <form method="post">
+      <input type="hidden" name="action" value="create" />
+      <div style="display:flex; gap:.5rem">
+        <input name="username" placeholder="username" />
+        <input name="password" placeholder="password" />
+        <select name="role"><option value="operator">operator</option><option value="admin">admin</option></select>
+        <button type="submit">Create</button>
+      </div>
+    </form>
+
+    <h4>Existing Users</h4>
+    <table>
+      <thead><tr><th>User</th><th>Role</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for u,meta in users.items() %}
+        <tr>
+          <td>{{ u }}</td>
+          <td>{{ meta.role }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete" />
+              <input type="hidden" name="username" value="{{ u }}" />
+              <button type="submit">Delete</button>
+            </form>
+            <form method="post" style="display:inline; margin-left:.5rem">
+              <input type="hidden" name="action" value="passwd" />
+              <input type="hidden" name="username" value="{{ u }}" />
+              <input name="password" placeholder="new pass" />
+              <button type="submit">Change</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

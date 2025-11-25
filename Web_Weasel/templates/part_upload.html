@@ -1,0 +1,19 @@
+<!-- Part: Upload section -->
+<section id="page-upload" class="hidden">
+  <div class="panel">
+    <form id="upload-form">
+      <label for="url">Scanned URL</label>
+      <input id="url" name="url" placeholder="example.com" required />
+
+      <label for="files">Gobuster output files</label>
+      <input id="files" name="file" type="file" multiple required />
+
+      <div class="row">
+        <button id="upload-submit" type="submit">Upload & Parse</button>
+        <button type="button" id="btn-upload-reset">Reset</button>
+      </div>
+
+      <div class="upload-feedback" id="upload-feedback" style="white-space:pre-wrap;font-family:monospace;color:#bfefff"></div>
+    </form>
+  </div>
+</section>

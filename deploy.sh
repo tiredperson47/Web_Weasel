@@ -6,6 +6,17 @@ echo "neo4j/$PASSDB" > ./neo4j_auth.txt
 
 /usr/bin/sudo /usr/bin/docker-compose up -d --build
 
-echo
-echo '===================================== DONE! ====================================='
-echo ''
+echo """
+===================================== DONE! =====================================
+
+To login to the Web Weasel web interface, open your browser and go to:
+http://localhost:8000
+
+Login with the following credentials:
+  Username: admin
+  Password: admin
+
+CHANGE THE DEFAULT PASSWORD IMMEDIATELY AFTER LOGGING IN!
+
+=================================================================================
+"""

@@ -10,8 +10,8 @@ services:
     environment:
       - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth_file
     ports:
-      - "127.0.0.1:7474:7474" # Change to local docker network only later
-      - "127.0.0.1:7687:7687" # Change to local docker network only later
+      - "7474" # Change to local docker network only later
+      - "7687" # Change to local docker network only later
     restart: always
     secrets:
       - neo4j_auth_file
@@ -21,27 +21,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    # networks:
-    #   - weasel
+    networks:
+      - weasel
 
-  # web_weasel:
-  #   container_name: web_weasel
-  #   build: ./Web_Weasel
-  #   ports:
-  #     - "8000"
-  #   volumes:
-  #     - ./neo4j_auth.txt:/app/neo4j_auth.txt:ro
-  #   restart: always
-    # networks:
-    #   - weasel
-      # depends_on:
-      # neo4j:
-      #   condition: service_healthy
+  web_weasel:
+    container_name: web_weasel
+    build: ./Web_Weasel
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./neo4j_auth.txt:/neo4j_auth.txt:ro
+      - ./Web_Weasel:/app:delegated
+    restart: always
+    networks:
+      - weasel
+    depends_on:
+      neo4j:
+        condition: service_healthy
 
 secrets:
   neo4j_auth_file:
     file: ./neo4j_auth.txt
 
-# networks:
-#   weasel:
-#     driver: bridge
+networks:
+  weasel:
+    driver: bridge
