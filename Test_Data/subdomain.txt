@@ -1,0 +1,2 @@
+www.example.com Status: 301 [Size: 636]
+www.beta.example.com Status: 403 [Size: 151]
